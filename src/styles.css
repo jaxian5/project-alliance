@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #14120e;
+  --color-surface: #1e1b16;
+  --color-surface-2: #2a261f;
+  --color-fg: #f4efe6;
+  --color-muted: #a39888;
+  --color-brass: #d4b483;
+  --color-brass-dim: #8c7349;
+  --color-line: #3a342b;
+  --color-blood: #9a4038;
+  --color-land: #2a382c;
+  --color-land-deep: #223026;
+  --color-land-bright: #3d5140;
+  --color-sea: #182229;
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --radius: 0.75rem;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button,
+  a,
+  input,
+  select {
+    touch-action: manipulation;
+  }
+}
+
+input[type="range"] {
+  accent-color: var(--color-brass);
+}
+
+[data-sonner-toaster] {
+  --normal-bg: var(--color-surface);
+  --normal-text: var(--color-fg);
+  --normal-border: var(--color-line);
+  font-family: var(--font-sans);
+}
