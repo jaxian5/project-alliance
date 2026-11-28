@@ -81,6 +81,24 @@ export function chebyshev(ax: number, ay: number, bx: number, by: number): numbe
   return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 }
 
+/**
+ * Sphere of influence: a (2*reach+1)² square (Chebyshev ≤ reach), plus one extra
+ * tile on each cardinal side. With START_REACH = 2 that is a 5×5 (25) plus four
+ * orthogonal tips = 29 squares.
+ */
+export function withinReach(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  reach: number,
+): boolean {
+  const dx = Math.abs(ax - bx);
+  const dy = Math.abs(ay - by);
+  if (Math.max(dx, dy) <= reach) return true;
+  return (dx === reach + 1 && dy === 0) || (dy === reach + 1 && dx === 0);
+}
+
 export function isOrthogonalStep(ax: number, ay: number, bx: number, by: number): boolean {
   return Math.abs(ax - bx) + Math.abs(ay - by) === 1;
 }
@@ -315,7 +333,7 @@ export function applyAction(game: Game, action: Action, now = Date.now()): Resul
     const target = next.nations.find((n) => n.id === action.targetId);
     if (!target || target.id === self.id) return fail("Choose another nation.");
     if (!target.alive) return fail("That nation has already fallen.");
-    if (chebyshev(self.x, self.y, target.x, target.y) > self.reach) {
+    if (!withinReach(self.x, self.y, target.x, target.y, self.reach)) {
       return fail("They are outside your reach.");
     }
     self.ap -= STRIKE_COST;
@@ -343,7 +361,7 @@ export function applyAction(game: Game, action: Action, now = Date.now()): Resul
     const target = next.nations.find((n) => n.id === action.targetId);
     if (!target || target.id === self.id) return fail("Choose another nation.");
     if (!target.alive) return fail("That nation has already fallen.");
-    if (chebyshev(self.x, self.y, target.x, target.y) > self.reach) {
+    if (!withinReach(self.x, self.y, target.x, target.y, self.reach)) {
       return fail("They are outside your reach.");
     }
     if (target.ap >= MAX_AP) return fail("They cannot hold more AP.");
@@ -363,5 +381,9 @@ export function applyAction(game: Game, action: Action, now = Date.now()): Resul
 }
 
 export function inReach(self: Nation, other: Nation): boolean {
-  return other.alive && other.id !== self.id && chebyshev(self.x, self.y, other.x, other.y) <= self.reach;
+  return (
+    other.alive &&
+    other.id !== self.id &&
+    withinReach(self.x, self.y, other.x, other.y, self.reach)
+  );
 }

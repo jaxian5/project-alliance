@@ -31,9 +31,9 @@ import {
   applyAction,
   chronicleOf,
   createGame,
-  chebyshev,
   directionName,
   inReach,
+  withinReach,
   isOrthogonalStep,
   nationLabel,
   pickLandSpawns,
@@ -1486,7 +1486,7 @@ function Board({
         const sphere =
           selected !== null &&
           land &&
-          chebyshev(selected.x, selected.y, x, y) <= selected.reach;
+          withinReach(selected.x, selected.y, x, y, selected.reach);
         const beside =
           selected !== null && land && !occupant && isOrthogonalStep(selected.x, selected.y, x, y);
         const strike =
@@ -1739,7 +1739,7 @@ function Codex({ cloud, onHome }: { cloud: boolean | null; onHome: () => void })
   const rules = [
     "March to a neighboring land square for 1 AP. You cannot move onto a sea tile. Nations and gravestones also block the step.",
     "Toggle Seas lays water in clumps, the way nations are scattered, then grown together. Land stays one piece: peninsulas and narrow landways can appear, islands do not.",
-    "Strike a nation inside your reach for 1 AP. The third blow eliminates them. Lives are never shown.",
+    "Strike a nation inside your reach for 1 AP. Starting reach is a 5×5 plus one extra square on each cardinal side (29 tiles). The third blow eliminates them. Lives are never shown.",
     "Extend reach for 2 AP. Send 1 AP to a nation inside your reach. Abdicate to leave the map.",
     "Sound the bell to advance the hour. Living nations gain 1 AP.",
     "A room keeps its name, code, capacity, battlefield size, time zone, starting hour, and jury hour. The host can change them only while the room is waiting.",
