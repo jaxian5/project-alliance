@@ -2,8 +2,8 @@ import { HEIGHT, WIDTH, cellKey, isLand, isWalkable, landCells } from "./board.t
 import { countryByIso } from "./countries.ts";
 
 export const START_HP = 3;
-export const START_AP = 3;
-export const START_REACH = 1;
+export const START_AP = 1;
+export const START_REACH = 2;
 export const MAX_AP = 8;
 export const MAX_REACH = 3;
 export const MARCH_COST = 1;
