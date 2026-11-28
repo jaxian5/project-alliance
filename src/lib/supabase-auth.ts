@@ -1,27 +1,26 @@
 import { supabase } from "./supabase";
 
-export async function ensureAnonymousUser(displayName?: string) {
-  // Check whether this browser already has an authenticated session.
+export async function ensureAnonymousUser() {
+  // Check whether the player already has a session.
   const {
     data: { session },
-    error: sessionError
+    error: sessionError,
   } = await supabase.auth.getSession();
 
   if (sessionError) {
     throw sessionError;
   }
 
-  // Reuse the existing identity.
+  // Reuse the existing identity if one exists.
   if (session?.user) {
     return session.user;
   }
 
   // Otherwise, create a new anonymous identity.
-  const { data, error } = await supabase.auth.signInAnonymously({
-    options: {
-      data: displayName ? { display_name: displayName } : {}
-    }
-  });
+  const {
+    data,
+    error,
+  } = await supabase.auth.signInAnonymously();
 
   if (error) {
     throw error;
