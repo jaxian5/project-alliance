@@ -1,16 +1,16 @@
-import { HEIGHT, WIDTH, cellKey, isLand, isWalkable, landCells } from "./board.ts";
+import { landCells, isLand, isWalkable } from "./board.ts";
 import { countryByIso } from "./countries.ts";
 
 export const START_HP = 3;
-export const START_AP = 1;
-export const START_REACH = 2;
+export const START_AP = 3;
+export const START_REACH = 1;
 export const MAX_AP = 8;
 export const MAX_REACH = 3;
 export const MARCH_COST = 1;
 export const STRIKE_COST = 1;
 export const EXTEND_COST = 2;
 export const SEND_AMOUNT = 1;
-export const BELL_GRANT = 1;
+export const BELL_GRANT = 2;
 
 export type Seat = { name: string; iso: string };
 
@@ -36,16 +36,6 @@ export type Ply = {
   snapshot: Nation[];
 };
 
-export type GameSchedule = {
-  timezone: string;
-  apHour: number;
-  juryHour: number;
-  /** YYYY-MM-DD in the room timezone when dawn AP was last granted. */
-  lastDawnDate: string | null;
-  /** YYYY-MM-DD in the room timezone when jury last fired. */
-  lastJuryDate: string | null;
-};
-
 export type Game = {
   id: string;
   title: string;
@@ -57,14 +47,6 @@ export type Game = {
   plies: Ply[];
   size?: number;
   seaCells?: string[];
-  /** Local hotseat / test table. Manual bell advances the hour. */
-  local?: boolean;
-  /**
-   * Real campaign clock (room lobby hours). When set and `local` is not true,
-   * dawn/jury follow the timezone — no manual bell.
-   * Shape matches schedule.ts RoomSchedule for a clean Supabase JSON column.
-   */
-  schedule?: GameSchedule;
 };
 
 export type Action =
@@ -95,24 +77,6 @@ export const DRILL_CELLS = [
 
 export function chebyshev(ax: number, ay: number, bx: number, by: number): number {
   return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
-}
-
-/**
- * Sphere of influence: a (2*reach+1)² square (Chebyshev ≤ reach), plus one extra
- * tile on each cardinal side. With START_REACH = 2 that is a 5×5 (25) plus four
- * orthogonal tips = 29 squares.
- */
-export function withinReach(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  reach: number,
-): boolean {
-  const dx = Math.abs(ax - bx);
-  const dy = Math.abs(ay - by);
-  if (Math.max(dx, dy) <= reach) return true;
-  return (dx === reach + 1 && dy === 0) || (dy === reach + 1 && dx === 0);
 }
 
 export function isOrthogonalStep(ax: number, ay: number, bx: number, by: number): boolean {
@@ -171,45 +135,18 @@ function closeIfAlone(game: Game, now: number): boolean {
 export function pickSpawns(count: number, rng: () => number = Math.random) {
   const land = landCells();
   if (count > land.length) throw new Error("Too many nations for this map.");
-  return spreadPicks(land, count, 2, rng);
-}
-
-export function pickLandSpawns(
-  size: number,
-  sea: ReadonlySet<string>,
-  count: number,
-  rng: () => number = Math.random,
-): { x: number; y: number }[] {
-  const land: { x: number; y: number }[] = [];
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      if (!sea.has(cellKey(x, y))) land.push({ x, y });
-    }
-  }
-  if (count > land.length) throw new Error("Too many nations for this map.");
-  const ideal = Math.max(2, Math.floor(size / Math.max(2, Math.sqrt(count))));
-  return spreadPicks(land, count, ideal, rng);
-}
-
-function spreadPicks(
-  land: { x: number; y: number }[],
-  count: number,
-  ideal: number,
-  rng: () => number,
-): { x: number; y: number }[] {
-  if (count === 0) return [];
   const first = land[Math.floor(rng() * land.length)]!;
   const picks = [first];
   while (picks.length < count) {
     let best = land[0]!;
     let bestScore = Number.POSITIVE_INFINITY;
     for (const cell of land) {
-      if (picks.some((picked) => picked.x === cell.x && picked.y === cell.y)) continue;
+      if (picks.some((p) => p.x === cell.x && p.y === cell.y)) continue;
       let nearest = Number.POSITIVE_INFINITY;
       for (const picked of picks) {
         nearest = Math.min(nearest, chebyshev(picked.x, picked.y, cell.x, cell.y));
       }
-      const score = Math.abs(nearest - ideal) + rng() * 0.15;
+      const score = Math.abs(nearest - 2) + rng() * 0.15;
       if (score < bestScore) {
         bestScore = score;
         best = cell;
@@ -227,28 +164,13 @@ export function createGame(opts: {
   now?: number;
   id?: string;
   rng?: () => number;
-  size?: number;
-  seaCells?: readonly string[];
-  local?: boolean;
-  schedule?: GameSchedule;
 }): Game {
   const now = opts.now ?? Date.now();
-  const size = opts.size;
-  const seaCells = size ? [...(opts.seaCells ?? [])] : undefined;
-  const sea = new Set(seaCells ?? []);
-  const rng = opts.rng ?? Math.random;
-  const cells =
-    opts.cells ??
-    (size ? pickLandSpawns(size, sea, opts.seats.length, rng) : pickSpawns(opts.seats.length, rng));
+  const cells = opts.cells ?? pickSpawns(opts.seats.length, opts.rng ?? Math.random);
   const nations: Nation[] = opts.seats.map((seat, index) => {
     const country = countryByIso(seat.iso);
     const cell = cells[index];
-    const seated = cell
-      ? size
-        ? isWalkable(cell.x, cell.y, size, sea)
-        : isLand(cell.x, cell.y)
-      : false;
-    if (!country || !cell || !seated) throw new Error("A nation could not be seated.");
+    if (!country || !cell || !isLand(cell.x, cell.y)) throw new Error("A nation could not be seated.");
     return {
       id: `n${index + 1}`,
       name: seat.name.trim(),
@@ -272,22 +194,12 @@ export function createGame(opts: {
     hour: 1,
     nations,
     plies: [],
-    size,
-    seaCells,
-    local: opts.local === true ? true : undefined,
-    schedule: opts.schedule,
   };
   snapshotPly(game, "The nations take their places.", null);
   return game;
 }
 
-function inField(game: Game, x: number, y: number): boolean {
-  if (typeof game.size === "number") return x >= 0 && y >= 0 && x < game.size && y < game.size;
-  return x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT;
-}
-
 function squareOpen(game: Game, x: number, y: number): boolean {
-  if (!inField(game, x, y)) return false;
   if (typeof game.size === "number") return isWalkable(x, y, game.size, new Set(game.seaCells ?? []));
   return isLand(x, y);
 }
@@ -304,10 +216,6 @@ export function applyAction(game: Game, action: Action, now = Date.now()): Resul
 
   if (action.type === "bell") {
     if (next.finishedAt) return fail("This table has already ended.");
-    // Manual bell is only for local test tables. Real rooms follow the lobby clock.
-    if (next.local !== true) {
-      return fail("This campaign follows the room clock. The bell is for test tables only.");
-    }
     next.hour += 1;
     for (const nation of next.nations) {
       if (nation.alive) nation.ap = Math.min(MAX_AP, nation.ap + BELL_GRANT);
@@ -326,10 +234,10 @@ export function applyAction(game: Game, action: Action, now = Date.now()): Resul
 
   if (action.type === "march") {
     if (self.ap < MARCH_COST) return fail(`You need ${MARCH_COST} AP to march.`);
-    if (!isOrthogonalStep(self.x, self.y, action.x, action.y) || !inField(next, action.x, action.y)) {
+    if (!squareOpen(next, action.x, action.y)) return fail("The sea is closed.");
+    if (!isOrthogonalStep(self.x, self.y, action.x, action.y)) {
       return fail("That square is not beside you.");
     }
-    if (!squareOpen(next, action.x, action.y)) return fail("You can't move onto the sea.");
     const occupied = next.nations.find((n) => n.x === action.x && n.y === action.y);
     if (occupied?.alive) return fail("That square is occupied.");
     if (occupied) return fail("A gravestone holds that square.");
@@ -355,7 +263,7 @@ export function applyAction(game: Game, action: Action, now = Date.now()): Resul
     const target = next.nations.find((n) => n.id === action.targetId);
     if (!target || target.id === self.id) return fail("Choose another nation.");
     if (!target.alive) return fail("That nation has already fallen.");
-    if (!withinReach(self.x, self.y, target.x, target.y, self.reach)) {
+    if (chebyshev(self.x, self.y, target.x, target.y) > self.reach) {
       return fail("They are outside your reach.");
     }
     self.ap -= STRIKE_COST;
@@ -383,7 +291,7 @@ export function applyAction(game: Game, action: Action, now = Date.now()): Resul
     const target = next.nations.find((n) => n.id === action.targetId);
     if (!target || target.id === self.id) return fail("Choose another nation.");
     if (!target.alive) return fail("That nation has already fallen.");
-    if (!withinReach(self.x, self.y, target.x, target.y, self.reach)) {
+    if (chebyshev(self.x, self.y, target.x, target.y) > self.reach) {
       return fail("They are outside your reach.");
     }
     if (target.ap >= MAX_AP) return fail("They cannot hold more AP.");
@@ -403,9 +311,5 @@ export function applyAction(game: Game, action: Action, now = Date.now()): Resul
 }
 
 export function inReach(self: Nation, other: Nation): boolean {
-  return (
-    other.alive &&
-    other.id !== self.id &&
-    withinReach(self.x, self.y, other.x, other.y, self.reach)
-  );
+  return other.alive && other.id !== self.id && chebyshev(self.x, self.y, other.x, other.y) <= self.reach;
 }

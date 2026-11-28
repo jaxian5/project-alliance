@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -30,29 +30,23 @@ import {
 import {
   applyAction,
   chronicleOf,
-  createGame,
   directionName,
   inReach,
-  withinReach,
   isOrthogonalStep,
   nationLabel,
-  pickLandSpawns,
   victoryLine,
   type Action,
   type Game,
   type Nation,
   type Result,
-  type Seat,
 } from "./rules.ts";
 import { isGame, loadSave, rememberGame, writeSave, type SaveFile } from "./storage.ts";
-import { isLocalTest, scheduleFromRoomSettings, tickSchedule } from "./schedule.ts";
 
 type Phase =
   | { kind: "home" }
   | { kind: "create" }
   | { kind: "room"; id: string }
   | { kind: "join" }
-  | { kind: "test" }
   | { kind: "match" }
   | { kind: "archive" }
   | { kind: "codex" }
@@ -170,23 +164,6 @@ export function AllianceApp() {
     setPhase({ kind: "room", id });
   }
 
-  function beginLocal(game: Game) {
-    const run = () => {
-      setPending(null);
-      store({ ...saveRef.current, live: game });
-      setPhase({ kind: "match" });
-    };
-    if (saveRef.current.live && !saveRef.current.live.finishedAt) {
-      setPending({
-        title: "Replace the open table?",
-        detail: "The unfinished table on this device will be discarded.",
-        run,
-      });
-      return;
-    }
-    run();
-  }
-
   return (
     <div className="min-h-dvh bg-bg text-fg">
       <Toaster position="top-center" duration={2200} />
@@ -198,7 +175,6 @@ export function AllianceApp() {
           archiveCount={archive.length}
           onCreate={() => setPhase({ kind: "create" })}
           onJoin={() => setPhase({ kind: "join" })}
-          onTest={() => setPhase({ kind: "test" })}
           onOpenRoom={openRoom}
           onResume={() => setPhase({ kind: "match" })}
           onArchive={() => setPhase({ kind: "archive" })}
@@ -226,16 +202,9 @@ export function AllianceApp() {
           onOpen={openRoom}
         />
       )}
-      {phase.kind === "test" && (
-        <TestTable
-          onCancel={() => setPhase({ kind: "home" })}
-          onStart={(game) => beginLocal(game)}
-        />
-      )}
       {phase.kind === "room" && (
         <RoomLobby
           room={rooms.find((room) => room.id === phase.id) ?? null}
-          liveGame={live}
           onHome={() => setPhase({ kind: "home" })}
           onSave={(settings) => {
             const current = saveRef.current.rooms.find((room) => room.id === phase.id);
@@ -261,21 +230,6 @@ export function AllianceApp() {
             });
             setPhase({ kind: "home" });
           }}
-          onResumeCampaign={() => setPhase({ kind: "match" })}
-          onTest={(game) => beginLocal(game)}
-          onStartCampaign={(game, roomId) => {
-            const current = saveRef.current.rooms.find((room) => room.id === roomId);
-            const roomsNext = saveRef.current.rooms.map((room) =>
-              room.id === roomId ? { ...room, status: "active" as const } : room,
-            );
-            store({
-              ...rememberGame(saveRef.current, game),
-              rooms: roomsNext,
-              activeRoomId: roomId,
-            });
-            if (current?.status === "waiting") toast.success("Campaign begun. Days follow the room clock.");
-            setPhase({ kind: "match" });
-          }}
         />
       )}
       {phase.kind === "match" && live && (
@@ -285,10 +239,6 @@ export function AllianceApp() {
           locked={pending !== null}
           onToggleConfirm={() => store({ ...saveRef.current, confirm: !saveRef.current.confirm })}
           onPlay={play}
-          onCommit={(next, message) => {
-            store(rememberGame(saveRef.current, next));
-            if (message) toast.success(message);
-          }}
           onHome={() => setPhase({ kind: "home" })}
           onAnalyse={() => setPhase({ kind: "analyse", game: live, cursor: live.plies.length - 1 })}
           onDiscard={() => {
@@ -319,22 +269,6 @@ export function AllianceApp() {
   );
 }
 
-function previewNation(name: string, iso: string, x: number, y: number): Nation {
-  return {
-    id: "host",
-    name,
-    country: countryByIso(iso)?.name ?? "",
-    iso,
-    x,
-    y,
-    hp: 3,
-    ap: 1,
-    reach: 2,
-    alive: true,
-    eliminatedBy: null,
-  };
-}
-
 function Home({
   booted,
   live,
@@ -342,7 +276,6 @@ function Home({
   archiveCount,
   onCreate,
   onJoin,
-  onTest,
   onOpenRoom,
   onResume,
   onArchive,
@@ -355,7 +288,6 @@ function Home({
   archiveCount: number;
   onCreate: () => void;
   onJoin: () => void;
-  onTest: () => void;
   onOpenRoom: (id: string) => void;
   onResume: () => void;
   onArchive: () => void;
@@ -385,9 +317,6 @@ function Home({
         </button>
         <button type="button" className={btn()} onClick={onJoin}>
           Enter a room code
-        </button>
-        <button type="button" className={btn()} onClick={onTest}>
-          Test table
         </button>
         <button type="button" className={btn()} onClick={onArchive}>
           Records{archiveCount ? ` · ${archiveCount}` : ""}
@@ -519,13 +448,14 @@ function CreateRoom({
           Open the lobby
         </button>
       </form>
-            <CountryPicker open={picker} taken={[]} onClose={() => setPicker(false)} onPick={(iso) => {
+      <CountryPicker open={picker} taken={[]} onClose={() => setPicker(false)} onPick={(iso) => {
         setHostIso(iso);
         setPicker(false);
       }} />
     </main>
   );
 }
+
 function JoinRoom({
   rooms,
   onCancel,
@@ -597,22 +527,14 @@ function JoinRoom({
 
 function RoomLobby({
   room,
-  liveGame,
   onHome,
   onSave,
   onClose,
-  onTest,
-  onStartCampaign,
-  onResumeCampaign,
 }: {
   room: Room | null;
-  liveGame: Game | null;
   onHome: () => void;
   onSave: (settings: RoomSettings) => void;
   onClose: () => void;
-  onTest: (game: Game) => void;
-  onStartCampaign: (game: Game, roomId: string) => void;
-  onResumeCampaign: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<RoomSettings | null>(room?.settings ?? null);
@@ -745,55 +667,31 @@ function RoomLobby({
           Toggle Seas
         </button>
       </div>
-      <div className="mt-3 max-h-[min(72dvh,640px)] overflow-auto rounded-lg border border-line bg-bg">
-        <div inert aria-hidden="true" className="flex w-max min-w-full justify-center p-2">
-          <Board
-            size={shown.gridSize}
-            sea={seaCells}
-            nations={[preview]}
-            selectedId={null}
-            sendMode={false}
-            reveal={false}
-            onCell={() => {}}
-            onHover={() => {}}
-          />
-        </div>
+      <div inert aria-hidden="true" className="mt-3 overflow-hidden rounded-lg border border-line">
+        <Board
+          size={shown.gridSize}
+          sea={seaCells}
+          nations={[preview]}
+          selectedId={null}
+          sendMode={false}
+          reveal={false}
+          onCell={() => {}}
+          onHover={() => {}}
+        />
       </div>
       <p className="mt-2 text-xs text-muted">
-        {shown.gridSize}×{shown.gridSize} square
+        {shown.gridSize}×{shown.gridSize}
         {shown.seas
-          ? ". Sea sits in clumps. A march cannot step onto it, and land is never cut into an island."
+          ? ". Sea sits in clumps. A march cannot step onto it."
           : ". Open water is off. Every square is land."}
       </p>
 
-      <button
-        type="button"
-        className={`${btn("solid")} mt-6`}
-        onClick={() => {
-          if (room.status === "active" && liveGame && !liveGame.local) {
-            onResumeCampaign();
-            return;
-          }
-          const game = campaignFromRoom(room);
-          onStartCampaign(game, room.id);
-        }}
-      >
-        {room.status === "active" && liveGame && !liveGame.local ? "Resume campaign" : "Begin campaign"}
+      <button type="button" className={`${btn()} mt-6`} disabled>
+        Begin when a second nation joins
       </button>
       <p className="mt-2 text-xs text-muted">
-        Real campaign: dawn grants 1 AP at {formatHour(shown.apHour)} and jury notes the hour at{" "}
-        {formatHour(shown.juryHour)} ({shown.timezone}). No manual bell — the room clock advances the day.
-      </p>
-
-      <button
-        type="button"
-        className={`${btn()} mt-4`}
-        onClick={() => onTest(localTestFromRoom(room))}
-      >
-        Test this field
-      </button>
-      <p className="mt-2 text-xs text-muted">
-        Local test on this device with several nations and a manual bell. Does not start the shared campaign.
+        Immediate start needs two nations. A ten-second countdown will be kept by the room, not by this device passing
+        hands.
       </p>
 
       {confirmClose ? (
@@ -923,196 +821,20 @@ function makePassphrase() {
   return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
-const TEST_SEATS: Seat[] = [
-  { name: "Ash Vale", iso: "br" },
-  { name: "Kenji Mori", iso: "jp" },
-  { name: "Claire Duval", iso: "fr" },
-  { name: "Mateo Ruiz", iso: "mx" },
-  { name: "Ingrid Solberg", iso: "no" },
-  { name: "Amara Okonkwo", iso: "ng" },
-  { name: "Leo Park", iso: "kr" },
-  { name: "Nadia Hassan", iso: "eg" },
-];
-
-function localTestFromRoom(room: Room): Game {
-  const host = room.members.find((member) => member.isHost) ?? room.members[0]!;
-  const seats: Seat[] = [{ name: host.name, iso: host.iso }];
-  for (const seat of TEST_SEATS) {
-    if (seats.length >= Math.min(4, room.settings.capacity, TEST_SEATS.length)) break;
-    if (seats.some((taken) => taken.iso === seat.iso)) continue;
-    seats.push(seat);
-  }
-  return createGame({
-    title: `${room.settings.name} test`,
-    seats,
-    size: room.settings.gridSize,
-    seaCells: room.settings.seas ? room.settings.seaCells : [],
-    local: true,
-  });
-}
-
-/** Real campaign: host seat only for now; schedule follows lobby hours (Supabase will add remote seats). */
-function campaignFromRoom(room: Room): Game {
-  const host = room.members.find((member) => member.isHost) ?? room.members[0]!;
-  const seats: Seat[] = [{ name: host.name, iso: host.iso }];
-  return createGame({
-    title: room.settings.name,
-    seats,
-    size: room.settings.gridSize,
-    seaCells: room.settings.seas ? room.settings.seaCells : [],
-    local: false,
-    schedule: scheduleFromRoomSettings({
-      timezone: room.settings.timezone,
-      apHour: room.settings.apHour,
-      juryHour: room.settings.juryHour,
-    }),
-  });
-}
-
-function mulberry32(seed: number) {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+function previewNation(name: string, iso: string, x: number, y: number): Nation {
+  return {
+    id: "host",
+    name,
+    country: countryByIso(iso)?.name ?? "",
+    iso,
+    x,
+    y,
+    hp: 3,
+    ap: 3,
+    reach: 1,
+    alive: true,
+    eliminatedBy: null,
   };
-}
-
-function TestTable({ onCancel, onStart }: { onCancel: () => void; onStart: (game: Game) => void }) {
-  const [gridSize, setGridSize] = useState<GridSize>(10);
-  const [seas, setSeas] = useState(false);
-  const [seaCells, setSeaCells] = useState<string[]>([]);
-  const [count, setCount] = useState(4);
-  const [seed, setSeed] = useState(7);
-
-  const preview = seatedNations(gridSize, seas ? seaCells : [], count, seed);
-
-  function chooseSize(next: GridSize) {
-    setGridSize(next);
-    setSeed((value) => value + 1);
-    setSeaCells(seas ? generateSeaCells(next) : []);
-  }
-
-  function toggleSeas() {
-    const next = !seas;
-    setSeas(next);
-    setSeed((value) => value + 1);
-    setSeaCells(next ? generateSeaCells(gridSize) : []);
-  }
-
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8">
-      <button type="button" className={`${btn("quiet")} self-start px-0`} onClick={onCancel}>
-        Back
-      </button>
-      <h1 className="font-display text-4xl leading-none">Test table</h1>
-      <p className="mt-3 text-sm text-muted">
-        A local table. You sit every nation yourself. Nothing here waits on another device.
-      </p>
-      <div className="mt-5 flex flex-col gap-3">
-        <label className="text-sm text-muted" htmlFor="test-field">
-          Battlefield
-          <select
-            id="test-field"
-            value={gridSize}
-            onChange={(event) => chooseSize(Number(event.target.value) as GridSize)}
-            className={fieldClass}
-          >
-            {([10, 15, 20, 25, 30] as const).map((size) => (
-              <option key={size} value={size}>
-                {gridLabel(size)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm text-muted" htmlFor="test-nations">
-          Nations on this device
-          <select
-            id="test-nations"
-            value={count}
-            onChange={(event) => {
-              setCount(Number(event.target.value));
-              setSeed((value) => value + 1);
-            }}
-            className={fieldClass}
-          >
-            {Array.from({ length: 7 }, (_, index) => index + 2).map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="mt-6 flex items-center justify-between gap-3">
-        <h2 className="font-display text-3xl leading-none">Field</h2>
-        <button
-          type="button"
-          aria-pressed={seas}
-          className={seas ? btn("solid") : btn()}
-          onClick={toggleSeas}
-        >
-          Toggle Seas
-        </button>
-      </div>
-      <FieldScroll inert>
-        <Board
-          size={gridSize}
-          sea={seas ? seaCells : []}
-          nations={preview}
-          selectedId={null}
-          sendMode={false}
-          reveal={false}
-          onCell={() => {}}
-          onHover={() => {}}
-        />
-      </FieldScroll>
-      <p className="mt-2 text-xs text-muted">
-        {gridSize}×{gridSize} square
-        {seas
-          ? ". Sea is clumped. You cannot march onto it. Land stays one piece."
-          : ". Open water is off. Every square is land."}
-      </p>
-      <button
-        type="button"
-        className={`${btn("solid")} mt-6`}
-        onClick={() =>
-          onStart(
-            createGame({
-              title: "Test table",
-              seats: TEST_SEATS.slice(0, count),
-              size: gridSize,
-              seaCells: seas ? seaCells : [],
-              local: true,
-              rng: mulberry32(seed),
-            }),
-          )
-        }
-      >
-        Sit down
-      </button>
-    </main>
-  );
-}
-
-function seatedNations(size: number, sea: string[], count: number, seed: number): Nation[] {
-  const cells = pickLandSpawns(size, new Set(sea), count, mulberry32(seed));
-  return TEST_SEATS.slice(0, count).map((seat, index) => {
-    const cell = cells[index] ?? { x: 0, y: 0 };
-    const nation = previewNation(seat.name, seat.iso, cell.x, cell.y);
-    return { ...nation, id: seat.iso };
-  });
-}
-
-function FieldScroll({ children, inert = false }: { children: ReactNode; inert?: boolean }) {
-  return (
-    <div className="mt-3 max-h-[min(72dvh,640px)] overflow-auto rounded-lg border border-line bg-bg">
-      <div inert={inert || undefined} aria-hidden={inert || undefined} className="flex w-max min-w-full justify-center p-2">
-        {children}
-      </div>
-    </div>
-  );
 }
 
 function CountryPicker({
@@ -1174,7 +896,6 @@ function Match({
   locked,
   onToggleConfirm,
   onPlay,
-  onCommit,
   onHome,
   onAnalyse,
   onDiscard,
@@ -1184,8 +905,6 @@ function Match({
   locked: boolean;
   onToggleConfirm: () => void;
   onPlay: (action: Action, opts: PlayOptions) => void;
-  /** Direct game write for schedule ticks (dawn / jury) — not an action. */
-  onCommit: (game: Game, toast?: string | null) => void;
   onHome: () => void;
   onAnalyse: () => void;
   onDiscard: () => void;
@@ -1202,20 +921,6 @@ function Match({
   useEffect(() => {
     if (!selected) setSendMode(false);
   }, [selected]);
-
-  // Real campaigns follow the room clock. Local tests use the manual bell.
-  // Polling is client-side for now; Supabase can run the same tickSchedule on a
-  // cron and broadcast the resulting game row.
-  useEffect(() => {
-    if (isLocalTest(game) || !game.schedule || game.finishedAt) return;
-    const pulse = () => {
-      const result = tickSchedule(game, Date.now());
-      if (result.changed) onCommit(result.game, result.toast);
-    };
-    pulse();
-    const id = window.setInterval(pulse, 30_000);
-    return () => window.clearInterval(id);
-  }, [game, onCommit]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -1285,16 +990,12 @@ function Match({
       }
       return;
     }
-    if (selected && isOrthogonalStep(selected.x, selected.y, x, y) && !insideField(game, x, y)) {
-      toast.error("That square is not beside you.");
-      return;
-    }
     if (selected && openSquare(game, x, y) && !occupant && isOrthogonalStep(selected.x, selected.y, x, y)) {
       march(x, y, selected);
       return;
     }
     if (selected && !openSquare(game, x, y) && isOrthogonalStep(selected.x, selected.y, x, y)) {
-      toast.error("You can't move onto the sea.");
+      toast.error("The sea is closed.");
       return;
     }
     if (selected && occupant && !occupant.alive && isOrthogonalStep(selected.x, selected.y, x, y)) {
@@ -1322,15 +1023,7 @@ function Match({
       <header className="flex items-center gap-2 border-b border-line px-3 py-2">
         <button type="button" className="min-w-0 flex-1 text-left" onClick={onHome}>
           <span className="block truncate font-display text-2xl leading-none">Alliance</span>
-          <span className="text-xs text-muted">
-            {isLocalTest(game)
-              ? "Local test · "
-              : game.schedule
-                ? `${game.schedule.timezone} · dawn ${String(game.schedule.apHour).padStart(2, "0")}:00 · `
-                : ""}
-            Hour {game.hour}
-            {game.size ? ` · ${game.size}×${game.size}` : ""}
-          </span>
+          <span className="text-xs text-muted">Hour {game.hour}</span>
         </button>
         <button
           type="button"
@@ -1349,41 +1042,37 @@ function Match({
         >
           <ScrollText className="size-4" />
         </button>
-        {isLocalTest(game) && (
-          <button
-            type="button"
-            className={`${btn()} w-11 px-0`}
-            aria-label="Sound the next bell"
-            disabled={Boolean(ended)}
-            onClick={() =>
-              onPlay(
-                { type: "bell" },
-                { title: "Sound the next bell?", detail: "Living nations gain 1 AP.", always: true },
-              )
-            }
-          >
-            <Bell className="size-4" />
-          </button>
-        )}
+        <button
+          type="button"
+          className={`${btn()} w-11 px-0`}
+          aria-label="Sound the next bell"
+          disabled={Boolean(ended)}
+          onClick={() =>
+            onPlay(
+              { type: "bell" },
+              { title: "Sound the next bell?", detail: "Living nations gain 2 AP.", always: true },
+            )
+          }
+        >
+          <Bell className="size-4" />
+        </button>
       </header>
-      <div className="relative min-h-0 flex-1 overflow-auto">
-        <div className="flex min-h-full w-max min-w-full items-center justify-center p-2">
-          <Board
-            size={game.size}
-            sea={game.seaCells ?? []}
-            nations={game.nations}
-            selectedId={selected?.id ?? null}
-            sendMode={sendMode}
-            reveal={false}
-            onCell={onCell}
-            onHover={(next) => {
-              if (next) {
-                setPinned(false);
-                setHover(next);
-              } else if (!pinned) setHover(null);
-            }}
-          />
-        </div>
+      <div className="relative min-h-0 flex-1 overflow-auto p-2">
+        <Board
+          size={game.size}
+          sea={game.seaCells ?? []}
+          nations={game.nations}
+          selectedId={selected?.id ?? null}
+          sendMode={sendMode}
+          reveal={false}
+          onCell={onCell}
+          onHover={(next) => {
+            if (next) {
+              setPinned(false);
+              setHover(next);
+            } else if (!pinned) setHover(null);
+          }}
+        />
         {chronicleOpen && (
           <aside className="absolute inset-y-2 right-2 z-20 flex w-64 max-w-[80%] flex-col rounded-lg border border-line bg-surface">
             <div className="flex items-center justify-between px-3 py-2">
@@ -1513,13 +1202,7 @@ function Compass({ onStep }: { onStep: (dx: number, dy: number) => void }) {
   );
 }
 
-function insideField(game: Game, x: number, y: number) {
-  if (typeof game.size === "number") return x >= 0 && y >= 0 && x < game.size && y < game.size;
-  return x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT;
-}
-
 function openSquare(game: Game, x: number, y: number) {
-  if (!insideField(game, x, y)) return false;
   if (typeof game.size === "number") return isWalkable(x, y, game.size, new Set(game.seaCells ?? []));
   return isLand(x, y);
 }
@@ -1546,28 +1229,18 @@ function Board({
   const selected = nations.find((nation) => nation.id === selectedId && nation.alive) ?? null;
   const width = size ?? WIDTH;
   const height = size ?? HEIGHT;
-  const tile = size == null ? 46 : 32;
   const seaSet = new Set(sea);
-  const dense = tile <= 32 && width >= 18;
+  const dense = width >= 16;
   return (
     <div
-      className="grid overflow-hidden rounded-lg border border-line"
-      style={{
-        width: width * tile,
-        height: height * tile,
-        gridTemplateColumns: `repeat(${width}, ${tile}px)`,
-        gridTemplateRows: `repeat(${height}, ${tile}px)`,
-      }}
+      className="mx-auto grid w-full max-w-3xl overflow-hidden rounded-lg border border-line"
+      style={{ gridTemplateColumns: `repeat(${width}, minmax(0, 1fr))` }}
     >
       {Array.from({ length: height * width }, (_, index) => {
         const x = index % width;
         const y = Math.floor(index / width);
         const occupant = nations.find((nation) => nation.x === x && nation.y === y) ?? null;
         const land = size == null ? isLand(x, y) : !seaSet.has(cellKey(x, y));
-        const sphere =
-          selected !== null &&
-          land &&
-          withinReach(selected.x, selected.y, x, y, selected.reach);
         const beside =
           selected !== null && land && !occupant && isOrthogonalStep(selected.x, selected.y, x, y);
         const strike =
@@ -1577,8 +1250,7 @@ function Board({
         const mine = occupant?.id === selectedId && occupant.alive;
         let tone = "bg-sea";
         if (land) tone = (x + y) % 2 === 0 ? "bg-land" : "bg-land-deep";
-        if (sphere) tone = "bg-land-bright";
-        if (beside) tone = "bg-land-bright ring-1 ring-brass/50 ring-inset";
+        if (beside) tone = "bg-land-bright";
         return (
           <button
             key={`${x}-${y}`}
@@ -1590,7 +1262,7 @@ function Board({
                   ? "Land"
                   : "Sea"
             }
-            className={`relative flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden border border-line p-0 ${tone} ${
+            className={`relative flex aspect-square items-center justify-center overflow-hidden border border-line ${tone} ${
               mine || send ? "ring-2 ring-brass ring-inset" : ""
             } ${strike ? "ring-2 ring-blood ring-inset" : ""}`}
             onClick={(event) => onCell(x, y, event)}
@@ -1687,23 +1359,21 @@ function Analyse({
           Download
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div className="flex w-max min-w-full justify-center p-2">
-          <Board
-            size={game.size}
-            sea={game.seaCells ?? []}
-            nations={ply.snapshot}
-            selectedId={null}
-            sendMode={false}
-            reveal
-            onCell={(x, y, point) => {
-              const occupant = ply.snapshot.find((nation) => nation.x === x && nation.y === y);
-              setHover(occupant ? { nation: occupant, x: point.clientX, y: point.clientY } : null);
-            }}
-            onHover={setHover}
-          />
-        </div>
-        <p className="mx-auto mt-3 max-w-3xl px-2 text-xs text-muted">Health · AP on each flag. Hover for reach.</p>
+      <div className="min-h-0 flex-1 overflow-auto p-2">
+        <Board
+          size={game.size}
+          sea={game.seaCells ?? []}
+          nations={ply.snapshot}
+          selectedId={null}
+          sendMode={false}
+          reveal
+          onCell={(x, y, point) => {
+            const occupant = ply.snapshot.find((nation) => nation.x === x && nation.y === y);
+            setHover(occupant ? { nation: occupant, x: point.clientX, y: point.clientY } : null);
+          }}
+          onHover={setHover}
+        />
+        <p className="mx-auto mt-3 max-w-3xl text-xs text-muted">Health · AP on each flag. Hover for reach.</p>
       </div>
       <footer className="border-t border-line px-3 py-2">
         <div className="mx-auto flex max-w-3xl flex-col gap-2">
@@ -1818,16 +1488,15 @@ function Archive({
 
 function Codex({ cloud, onHome }: { cloud: boolean | null; onHome: () => void }) {
   const rules = [
-    "March to a neighboring land square for 1 AP. You cannot move onto a sea tile. Nations and gravestones also block the step.",
-    "Toggle Seas lays water in clumps, the way nations are scattered, then grown together. Land stays one piece: peninsulas and narrow landways can appear, islands do not.",
-    "Strike a nation inside your reach for 1 AP. Starting reach is a 5×5 plus one extra square on each cardinal side (29 tiles). The third blow eliminates them. Lives are never shown.",
+    "March to a neighboring land square for 1 AP. The sea, nations, and gravestones block the step.",
+    "Strike a nation inside your reach for 1 AP. The third blow eliminates them. Lives are never shown.",
     "Extend reach for 2 AP. Send 1 AP to a nation inside your reach. Abdicate to leave the map.",
-    "Test tables: sound the bell to advance the hour. Living nations gain 1 AP. Real rooms: dawn at the host starting hour grants 1 AP; jury hour is noted on the clock — no bell.",
-    "A room keeps its name, code, capacity, battlefield size, time zone, starting hour, and jury hour. The host can change them only while the room is waiting. Begin campaign locks settings and follows that clock.",
-    "A test table seats several nations on this device so the field can be tried without another player. You move each nation in turn.",
+    "Sound the bell to advance the hour. Living nations gain 2 AP.",
+    "A room keeps its name, code, capacity, battlefield size, time zone, starting hour, and jury hour. The host can change them only while the room is waiting.",
+    "Each nation joins from their own device. This build does not seat several nations on one screen.",
     "The chronicle names only the blow that ends a nation.",
     "When one nation remains, they rule the world. The record can be analysed with health, AP, and reach visible.",
-    "Confirm asks before an action. Abdication, sending AP, and the test-table bell always ask.",
+    "Confirm asks before an action. Abdication, sending AP, and the bell always ask.",
   ];
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8">

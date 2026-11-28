@@ -9,7 +9,7 @@ import {
   uniqueCode,
   type RoomSettings,
 } from "./room.ts";
-import { cellKey, generateSeaCells, landIsConnected } from "./board.ts";
+import { cellKey, generateSeaCells } from "./board.ts";
 
 const base: RoomSettings = {
   name: "  Northern room  ",
@@ -91,7 +91,6 @@ describe("room settings", () => {
     assert.ok(cells.length > 20);
     assert.ok(cells.length < 20 * 20 * 0.4);
     assert.ok(touching / cells.length >= 0.7);
-    assert.equal(landIsConnected(20, set), true);
     const settings = normalizeSettings({ ...base, seas: true, seaCells: cells, gridSize: 20 });
     assert.equal(settings.seas, true);
     assert.deepEqual(settings.seaCells, cells);

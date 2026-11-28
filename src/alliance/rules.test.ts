@@ -21,7 +21,7 @@ describe("alliance rules", () => {
     game.seaCells = ["1,0"];
     const denied = applyAction(game, { type: "march", id: "n1", x: 1, y: 0 });
     assert.equal(denied.ok, false);
-    if (!denied.ok) assert.equal(denied.toast, "You can't move onto the sea.");
+    if (!denied.ok) assert.equal(denied.toast, "The sea is closed.");
     assert.equal(game.nations[0]!.y, 1);
   });
 
@@ -31,16 +31,18 @@ describe("alliance rules", () => {
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(result.toast, null);
-    assert.equal(result.game.nations[0]!.ap, 0);
+    assert.equal(result.game.nations[0]!.ap, 2);
     assert.equal(result.game.nations[0]!.y, 0);
     assert.deepEqual(chronicleOf(result.game), []);
   });
 
   it("refuses a march without AP", () => {
     let game = table();
-    const step = applyAction(game, { type: "march", id: "n1", x: 1, y: 0 });
-    assert.equal(step.ok, true);
-    if (step.ok) game = step.game;
+    for (const y of [0, 1, 0]) {
+      const step = applyAction(game, { type: "march", id: "n1", x: 1, y });
+      assert.equal(step.ok, true);
+      if (step.ok) game = step.game;
+    }
     const denied = applyAction(game, { type: "march", id: "n1", x: 1, y: 1 });
     assert.equal(denied.ok, false);
     if (!denied.ok) assert.equal(denied.toast, "You need 1 AP to march.");
@@ -52,11 +54,6 @@ describe("alliance rules", () => {
       { x: 2, y: 1 },
       { x: 3, y: 1 },
     ]);
-    // Bell grants AP so n1 can land two strikes with starting AP of 1.
-    const bell = applyAction(game, { type: "bell" });
-    assert.equal(bell.ok, true);
-    if (!bell.ok) return;
-    game = bell.game;
     const first = applyAction(game, { type: "strike", id: "n1", targetId: "n2" });
     assert.equal(first.ok, true);
     if (!first.ok) return;
@@ -81,7 +78,7 @@ describe("alliance rules", () => {
     assert.equal(blows[0]!.text.includes("Health 2"), true);
   });
 
-    it("crowns the last nation and keeps the record", () => {
+  it("crowns the last nation and keeps the record", () => {
     let game = createGame({
       title: "Duel",
       seats: DRILL.slice(0, 2),
@@ -89,24 +86,16 @@ describe("alliance rules", () => {
       now: 5,
       id: "duel",
     });
-    // Three bells: start 1 + 1+1+1 = 4 AP for three strikes
-    for (let i = 0; i < 3; i += 1) {
-      const bell = applyAction(game, { type: "bell" }, 20);
-      assert.equal(bell.ok, true);
-      if (bell.ok) game = bell.game;
-    }
     for (let i = 0; i < 3; i += 1) {
       const step = applyAction(game, { type: "strike", id: "n1", targetId: "n2" }, 20);
       assert.equal(step.ok, true);
       if (step.ok) game = step.game;
     }
     assert.equal(victoryLine(game), "Ash Vale of Brazil rules the world!");
-    // opening ply + 3 bells + 3 strikes
-    assert.equal(game.plies.length, 7);
-    assert.equal(game.plies[6]!.snapshot[1]!.hp, 0);
-    assert.equal(game.plies[4]!.snapshot[1]!.hp, 2);
-    // after first strike: 4 AP - 1 = 3
-    assert.equal(game.plies[4]!.snapshot[0]!.ap, 3);
+    assert.equal(game.plies.length, 4);
+    assert.equal(game.plies[3]!.snapshot[1]!.hp, 0);
+    assert.equal(game.plies[1]!.snapshot[1]!.hp, 2);
+    assert.equal(game.plies[1]!.snapshot[0]!.ap, 2);
   });
 
   it("records abdication without a life tally", () => {
@@ -120,17 +109,12 @@ describe("alliance rules", () => {
   });
 
   it("toasts a range extension once", () => {
-    let game = table();
-    const bell = applyAction(game, { type: "bell" });
-    assert.equal(bell.ok, true);
-    if (!bell.ok) return;
-    game = bell.game;
+    const game = table();
     const step = applyAction(game, { type: "extend", id: "n1" });
     assert.equal(step.ok, true);
     if (!step.ok) return;
-    assert.equal(step.toast, "Reach is now 3.");
-    assert.equal(step.game.nations[0]!.reach, 3);
-    // start 1 + bell 2 - extend 2 = 1
+    assert.equal(step.toast, "Reach is now 2.");
+    assert.equal(step.game.nations[0]!.reach, 2);
     assert.equal(step.game.nations[0]!.ap, 1);
     assert.equal(chronicleOf(step.game).length, 0);
   });
@@ -141,7 +125,7 @@ describe("alliance rules", () => {
     game.seaCells = ["1,0"];
     const denied = applyAction(game, { type: "march", id: "n1", x: 1, y: 0 });
     assert.equal(denied.ok, false);
-    if (!denied.ok) assert.equal(denied.toast, "You can't move onto the sea.");
+    if (!denied.ok) assert.equal(denied.toast, "The sea is closed.");
     assert.equal(game.nations[0]!.y, 1);
   });
 });
