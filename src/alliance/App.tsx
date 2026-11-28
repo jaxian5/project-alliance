@@ -298,6 +298,22 @@ export function AllianceApp() {
   );
 }
 
+function previewNation(name: string, iso: string, x: number, y: number): Nation {
+  return {
+    id: "host",
+    name,
+    country: countryByIso(iso)?.name ?? "",
+    iso,
+    x,
+    y,
+    hp: 3,
+    ap: 1,
+    reach: 2,
+    alive: true,
+    eliminatedBy: null,
+  };
+}
+
 function Home({
   booted,
   live,
