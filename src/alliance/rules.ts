@@ -10,7 +10,7 @@ export const MARCH_COST = 1;
 export const STRIKE_COST = 1;
 export const EXTEND_COST = 2;
 export const SEND_AMOUNT = 1;
-export const BELL_GRANT = 2;
+export const BELL_GRANT = 1;
 
 export type Seat = { name: string; iso: string };
 
