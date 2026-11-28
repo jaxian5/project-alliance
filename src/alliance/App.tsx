@@ -31,23 +31,6 @@ import {
   applyAction,
   chronicleOf,
   createGame,
-  directionName,
-  inReach,
-  isOrthogonalStep,
-  nationLabel,
-  pickLandSpawns,
-  victoryLine,
-  type Action,
-  type Game,
-  type Nation,
-  type Result,
-  type Seat,
-} from "./rules.ts";
-import { isGame, loadSave, rememberGame, writeSave, type SaveFile } from "./storage.ts";
-import {
-  applyAction,
-  chronicleOf,
-  createGame,
   chebyshev,
   directionName,
   inReach,
@@ -518,7 +501,21 @@ function CreateRoom({
       <CountryPicker open={picker} taken={[]} onClose={() => setPicker(false)} onPick={(iso) => {
         setHostIso(iso);
         setPicker(false);
-      }} />
+      }} />function previewNation(name: string, iso: string, x: number, y: number): Nation {
+  return {
+    id: "host",
+    name,
+    country: countryByIso(iso)?.name ?? "",
+    iso,
+    x,
+    y,
+    hp: 3,
+    ap: 1,
+    reach: 2,
+    alive: true,
+    eliminatedBy: null,
+  };
+}
     </main>
   );
 }
@@ -1295,7 +1292,7 @@ function Match({
           onClick={() =>
             onPlay(
               { type: "bell" },
-              { title: "Sound the next bell?", detail: "Living nations gain 2 AP.", always: true },
+              { title: "Sound the next bell?", detail: "Living nations gain 1 AP.", always: true },
             )
           }
         >
@@ -1500,6 +1497,10 @@ function Board({
         const y = Math.floor(index / width);
         const occupant = nations.find((nation) => nation.x === x && nation.y === y) ?? null;
         const land = size == null ? isLand(x, y) : !seaSet.has(cellKey(x, y));
+        const sphere =
+          selected !== null &&
+          land &&
+          chebyshev(selected.x, selected.y, x, y) <= selected.reach;
         const beside =
           selected !== null && land && !occupant && isOrthogonalStep(selected.x, selected.y, x, y);
         const strike =
@@ -1509,7 +1510,8 @@ function Board({
         const mine = occupant?.id === selectedId && occupant.alive;
         let tone = "bg-sea";
         if (land) tone = (x + y) % 2 === 0 ? "bg-land" : "bg-land-deep";
-        if (beside) tone = "bg-land-bright";
+        if (sphere) tone = "bg-land-bright";
+        if (beside) tone = "bg-land-bright ring-1 ring-brass/50 ring-inset";
         return (
           <button
             key={`${x}-${y}`}
@@ -1753,7 +1755,7 @@ function Codex({ cloud, onHome }: { cloud: boolean | null; onHome: () => void })
     "Toggle Seas lays water in clumps, the way nations are scattered, then grown together. Land stays one piece: peninsulas and narrow landways can appear, islands do not.",
     "Strike a nation inside your reach for 1 AP. The third blow eliminates them. Lives are never shown.",
     "Extend reach for 2 AP. Send 1 AP to a nation inside your reach. Abdicate to leave the map.",
-    "Sound the bell to advance the hour. Living nations gain 2 AP.",
+    "Sound the bell to advance the hour. Living nations gain 1 AP.",
     "A room keeps its name, code, capacity, battlefield size, time zone, starting hour, and jury hour. The host can change them only while the room is waiting.",
     "A test table seats several nations on this device so the field can be tried without another player. You move each nation in turn.",
     "The chronicle names only the blow that ends a nation.",
