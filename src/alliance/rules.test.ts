@@ -81,7 +81,7 @@ describe("alliance rules", () => {
     assert.equal(blows[0]!.text.includes("Health 2"), true);
   });
 
-  it("crowns the last nation and keeps the record", () => {
+    it("crowns the last nation and keeps the record", () => {
     let game = createGame({
       title: "Duel",
       seats: DRILL.slice(0, 2),
@@ -89,8 +89,8 @@ describe("alliance rules", () => {
       now: 5,
       id: "duel",
     });
-    // Two bells give enough AP for three strikes (start 1 + 2 + 2).
-    for (let i = 0; i < 2; i += 1) {
+    // Three bells: start 1 + 1+1+1 = 4 AP for three strikes
+    for (let i = 0; i < 3; i += 1) {
       const bell = applyAction(game, { type: "bell" }, 20);
       assert.equal(bell.ok, true);
       if (bell.ok) game = bell.game;
@@ -101,12 +101,12 @@ describe("alliance rules", () => {
       if (step.ok) game = step.game;
     }
     assert.equal(victoryLine(game), "Ash Vale of Brazil rules the world!");
-    // opening ply + 2 bells + 3 strikes
-    assert.equal(game.plies.length, 6);
-    assert.equal(game.plies[5]!.snapshot[1]!.hp, 0);
-    assert.equal(game.plies[3]!.snapshot[1]!.hp, 2);
-    // after first strike: started with 5 AP (1+2+2), spent 1 -> 4
-    assert.equal(game.plies[3]!.snapshot[0]!.ap, 4);
+    // opening ply + 3 bells + 3 strikes
+    assert.equal(game.plies.length, 7);
+    assert.equal(game.plies[6]!.snapshot[1]!.hp, 0);
+    assert.equal(game.plies[4]!.snapshot[1]!.hp, 2);
+    // after first strike: 4 AP - 1 = 3
+    assert.equal(game.plies[4]!.snapshot[0]!.ap, 3);
   });
 
   it("records abdication without a life tally", () => {
