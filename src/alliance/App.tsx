@@ -44,6 +44,23 @@ import {
   type Seat,
 } from "./rules.ts";
 import { isGame, loadSave, rememberGame, writeSave, type SaveFile } from "./storage.ts";
+import {
+  applyAction,
+  chronicleOf,
+  createGame,
+  chebyshev,
+  directionName,
+  inReach,
+  isOrthogonalStep,
+  nationLabel,
+  pickLandSpawns,
+  victoryLine,
+  type Action,
+  type Game,
+  type Nation,
+  type Result,
+  type Seat,
+} from "./rules.ts";
 
 type Phase =
   | { kind: "home" }
