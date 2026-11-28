@@ -879,22 +879,6 @@ function makePassphrase() {
   return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
-function previewNation(name: string, iso: string, x: number, y: number): Nation {
-  return {
-    id: "host",
-    name,
-    country: countryByIso(iso)?.name ?? "",
-    iso,
-    x,
-    y,
-    hp: 3,
-    ap: 3,
-    reach: 1,
-    alive: true,
-    eliminatedBy: null,
-  };
-}
-
 const TEST_SEATS: Seat[] = [
   { name: "Ash Vale", iso: "br" },
   { name: "Kenji Mori", iso: "jp" },
